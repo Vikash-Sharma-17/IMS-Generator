@@ -1,0 +1,5 @@
+{
+  "name": "Inventory Management Sheet",
+  "description": "A dynamic, spreadsheet-like web application for tracking inventory. Users can input opening, receiving, and closing stock values, and the app automatically calculates the variance. The data can be exported to a CSV file.",
+  "requestFramePermissions": []
+}
