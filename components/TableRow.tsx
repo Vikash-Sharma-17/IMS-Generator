@@ -9,9 +9,10 @@ interface TableRowProps {
   onItemChange: (field: ItemKey, value: string) => void;
   onDeleteItem: () => void;
   onNegativeVariance: (itemName: string) => void;
+  isPriceEditMode: boolean;
 }
 
-const MemoizedTableRow: React.FC<TableRowProps> = ({ serialNumber, item, onItemChange, onDeleteItem, onNegativeVariance }) => {
+const MemoizedTableRow: React.FC<TableRowProps> = ({ serialNumber, item, onItemChange, onDeleteItem, onNegativeVariance, isPriceEditMode }) => {
 
   const variance = useMemo(() => {
     const opening = parseFloat(String(item.opening)) || 0;
@@ -58,16 +59,18 @@ const MemoizedTableRow: React.FC<TableRowProps> = ({ serialNumber, item, onItemC
             type="text"
             value={item.name || ''}
             onChange={handleItemNameChange}
-            className="w-full bg-transparent p-1 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded-md"
+            className="w-full bg-transparent p-1 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
             placeholder="Item name..."
+            disabled={isPriceEditMode}
         />
       </td>
       <td className="px-4 py-2">
         <select
           value={item.uom || 'COUNT'}
           onChange={handleUomChange}
-          className="w-full bg-slate-700/50 border border-slate-600 rounded-md py-1 px-2 text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors"
+          className="w-full bg-slate-700/50 border border-slate-600 rounded-md py-1 px-2 text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           aria-label="Unit of Measurement"
+          disabled={isPriceEditMode}
         >
           {UOM_OPTIONS.map(uom => (
             <option key={uom} value={uom} className="bg-slate-800 text-slate-200">
@@ -76,15 +79,20 @@ const MemoizedTableRow: React.FC<TableRowProps> = ({ serialNumber, item, onItemC
           ))}
         </select>
       </td>
-      <td className="px-4 py-2">
-        <input
-          type="number"
-          name="price"
-          value={item.price || ''}
-          onChange={handleInputChange}
-          className="w-full bg-transparent p-1 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded-md"
-          placeholder="0.00"
-        />
+      <td className={`px-4 py-2 transition-colors ${isPriceEditMode ? 'bg-purple-900/30' : ''}`}>
+        {isPriceEditMode ? (
+          <input
+            type="number"
+            name="price"
+            value={item.price || ''}
+            onChange={handleInputChange}
+            className="w-full bg-slate-600 p-1 focus:outline-none focus:ring-1 focus:ring-teal-500 rounded-md"
+            placeholder="0.00"
+            aria-label={`${item.name} price`}
+          />
+        ) : (
+          <span className="p-1 font-mono text-slate-300">{item.price ? parseFloat(String(item.price)).toFixed(2) : '-'}</span>
+        )}
       </td>
       <td className="px-4 py-2">
         <input
@@ -92,8 +100,9 @@ const MemoizedTableRow: React.FC<TableRowProps> = ({ serialNumber, item, onItemC
           name="opening"
           value={item.opening || ''}
           onChange={handleInputChange}
-          className="w-full bg-transparent p-1 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded-md"
+          className="w-full bg-transparent p-1 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
           placeholder="0"
+          disabled={isPriceEditMode}
         />
       </td>
       <td className="px-4 py-2">
@@ -102,8 +111,9 @@ const MemoizedTableRow: React.FC<TableRowProps> = ({ serialNumber, item, onItemC
           name="receiving"
           value={item.receiving || ''}
           onChange={handleInputChange}
-          className="w-full bg-transparent p-1 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded-md"
+          className="w-full bg-transparent p-1 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
           placeholder="0"
+          disabled={isPriceEditMode}
         />
       </td>
       <td className="px-4 py-2">
@@ -112,8 +122,9 @@ const MemoizedTableRow: React.FC<TableRowProps> = ({ serialNumber, item, onItemC
           name="closing"
           value={item.closing || ''}
           onChange={handleInputChange}
-          className="w-full bg-transparent p-1 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded-md"
+          className="w-full bg-transparent p-1 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
           placeholder="0"
+          disabled={isPriceEditMode}
         />
       </td>
       <td className={`px-4 py-2 font-mono font-semibold ${varianceColor}`}>
@@ -122,8 +133,9 @@ const MemoizedTableRow: React.FC<TableRowProps> = ({ serialNumber, item, onItemC
       <td className="px-4 py-2 text-center">
         <button 
           onClick={onDeleteItem} 
-          className="text-slate-500 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+          className="text-slate-500 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50 disabled:cursor-not-allowed"
           aria-label="Delete item"
+          disabled={isPriceEditMode}
         >
           <TrashIcon />
         </button>

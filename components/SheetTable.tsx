@@ -11,9 +11,10 @@ interface SheetTableProps {
   onDeleteCategory: (categoryId: string) => void;
   onUpdateCategoryName: (categoryId: string, newCategoryName: string) => void;
   onNegativeVariance: (itemName: string) => void;
+  isPriceEditMode: boolean;
 }
 
-export const SheetTable: React.FC<SheetTableProps> = ({ data, onItemChange, onAddItem, onDeleteItem, onDeleteCategory, onUpdateCategoryName, onNegativeVariance }) => {
+export const SheetTable: React.FC<SheetTableProps> = ({ data, onItemChange, onAddItem, onDeleteItem, onDeleteCategory, onUpdateCategoryName, onNegativeVariance, isPriceEditMode }) => {
   let serialNumber = 1;
 
   return (
@@ -40,6 +41,7 @@ export const SheetTable: React.FC<SheetTableProps> = ({ data, onItemChange, onAd
                 onAddItem={() => onAddItem(category.id)}
                 onDeleteCategory={() => onDeleteCategory(category.id)}
                 onUpdateCategoryName={(newName) => onUpdateCategoryName(category.id, newName)}
+                isPriceEditMode={isPriceEditMode}
               />
               {category.items.map((item, index) => {
                 const currentSerialNumber = serialNumber + index;
@@ -51,6 +53,7 @@ export const SheetTable: React.FC<SheetTableProps> = ({ data, onItemChange, onAd
                     onItemChange={(field, value) => onItemChange(category.id, item.id, field, value)}
                     onDeleteItem={() => onDeleteItem(category.id, item.id)}
                     onNegativeVariance={onNegativeVariance}
+                    isPriceEditMode={isPriceEditMode}
                   />
                 );
               })}

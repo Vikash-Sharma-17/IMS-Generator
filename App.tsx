@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { SheetTable } from './components/SheetTable';
-import { DownloadIcon, WhatsAppIcon, PlusIcon, SearchIcon, FilterIcon, WarningIcon } from './components/icons';
+// FIX: Import `TrashIcon` as it's used for the delete contact button.
+import { DownloadIcon, WhatsAppIcon, PlusIcon, SearchIcon, FilterIcon, WarningIcon, ResetIcon, PencilIcon, CheckIcon, XIcon, UserGroupIcon, TrashIcon } from './components/icons';
 import { initialInventoryData } from './services/data';
 import type { InventoryCategory, InventoryItem, ItemKey, Uom } from './types';
 
@@ -17,6 +18,13 @@ const defaultFilters: ActiveFilters = {
   status: 'all',
 };
 
+type Contact = {
+  id: string;
+  name: string;
+  number: string;
+};
+
+
 const App: React.FC = () => {
   const [inventoryData, setInventoryData] = useState<InventoryCategory[]>(() => {
     try {
@@ -30,7 +38,6 @@ const App: React.FC = () => {
     return initialInventoryData;
   });
 
-  const [phoneNumber, setPhoneNumber] = useState<string>('');
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
 
   const [isAddCategoryModalOpen, setIsAddCategoryModalOpen] = useState(false);
@@ -47,7 +54,30 @@ const App: React.FC = () => {
     title: '',
     message: '',
   });
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+  const [isPriceEditMode, setIsPriceEditMode] = useState(false);
+  const [inventoryDataBeforeEdit, setInventoryDataBeforeEdit] = useState<InventoryCategory[] | null>(null);
   
+  // Contact Management State
+  const [contacts, setContacts] = useState<Contact[]>(() => {
+    try {
+        const savedContacts = localStorage.getItem('contacts');
+        return savedContacts ? JSON.parse(savedContacts) : [];
+    } catch (error) {
+        console.error("Failed to load contacts from localStorage", error);
+        return [];
+    }
+  });
+  const [isContactsModalOpen, setIsContactsModalOpen] = useState(false);
+  const [newContactName, setNewContactName] = useState('');
+  const [newContactNumber, setNewContactNumber] = useState('');
+
+  // WhatsApp Autocomplete State
+  const [whatsAppInput, setWhatsAppInput] = useState('');
+  const [selectedWhatsAppNumber, setSelectedWhatsAppNumber] = useState('');
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const whatsAppInputRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     try {
       localStorage.setItem('inventoryData', JSON.stringify(inventoryData));
@@ -55,6 +85,26 @@ const App: React.FC = () => {
       console.error("Failed to save inventory data to localStorage", error);
     }
   }, [inventoryData]);
+
+  useEffect(() => {
+    try {
+        localStorage.setItem('contacts', JSON.stringify(contacts));
+    } catch (error) {
+        console.error("Failed to save contacts to localStorage", error);
+    }
+  }, [contacts]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+        if (whatsAppInputRef.current && !whatsAppInputRef.current.contains(event.target as Node)) {
+            setShowSuggestions(false);
+        }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   useEffect(() => {
     if (selectedCategoryFilter === 'all') return;
@@ -188,6 +238,75 @@ const App: React.FC = () => {
     );
   }, [inventoryData]);
 
+  const handleEnterPriceEditMode = () => {
+    setInventoryDataBeforeEdit(JSON.parse(JSON.stringify(inventoryData)));
+    setIsPriceEditMode(true);
+  };
+  
+  const handleSavePrices = () => {
+    setIsPriceEditMode(false);
+    setInventoryDataBeforeEdit(null);
+  };
+
+  const handleCancelPriceEdit = () => {
+    if (inventoryDataBeforeEdit) {
+      setInventoryData(inventoryDataBeforeEdit);
+    }
+    setIsPriceEditMode(false);
+    setInventoryDataBeforeEdit(null);
+  };
+
+  const filteredData = useMemo(() => {
+    let processedData = inventoryData;
+
+    if (selectedCategoryFilter !== 'all') {
+      processedData = processedData.filter(category => category.id === selectedCategoryFilter);
+    }
+
+    if (searchQuery.trim() !== '') {
+      processedData = processedData.map(category => ({
+        ...category,
+        items: category.items.filter(item =>
+          item.name.toLowerCase().includes(searchQuery.trim().toLowerCase())
+        ),
+      })).filter(category => category.items.length > 0);
+    }
+
+    const { variance, stock, status } = activeFilters;
+    if (variance !== 'all' || stock !== 'all' || status !== 'all') {
+      processedData = processedData.map(category => ({
+        ...category,
+        items: category.items.filter(item => {
+          const opening = parseFloat(String(item.opening)) || 0;
+          const receiving = parseFloat(String(item.receiving)) || 0;
+          const closing = parseFloat(String(item.closing)) || 0;
+          const itemVariance = opening + receiving - closing;
+
+          const varianceMatch = variance === 'all' ||
+            (variance === 'positive' && itemVariance > 0) ||
+            (variance === 'negative' && itemVariance < 0) ||
+            (variance === 'zero' && itemVariance === 0);
+
+          const stockMatch = stock === 'all' ||
+            (stock === 'outOfStock' && closing === 0 && (String(item.closing).trim() !== '' || String(item.opening).trim() !== ''));
+
+          const statusMatch = status === 'all' ||
+            (status === 'incomplete' && (
+              item.name.trim() === '' ||
+              String(item.opening).trim() === '' ||
+              String(item.receiving).trim() === '' ||
+              String(item.closing).trim() === '' ||
+              String(item.price).trim() === ''
+            ));
+
+          return varianceMatch && stockMatch && statusMatch;
+        }),
+      })).filter(category => category.items.length > 0);
+    }
+
+    return processedData;
+  }, [inventoryData, selectedCategoryFilter, searchQuery, activeFilters]);
+
   const handleExportCSV = () => {
     const headers = ['S.NO', 'CATEGORY', 'ITEMS', 'UOM', 'PRICE', 'OPENING', 'RECEIVING', 'CLOSING', 'VARIANCE'];
     let csvContent = headers.join(',') + '\n';
@@ -258,14 +377,15 @@ const App: React.FC = () => {
   };
 
   const handleSendWhatsApp = () => {
-    if (!phoneNumber.trim()) {
-      setAlertModal({ isOpen: true, title: 'Invalid Phone Number', message: 'Please enter a valid phone number with country code.' });
-      return;
+    const numberToSend = selectedWhatsAppNumber.trim() || whatsAppInput.trim();
+    if (!numberToSend) {
+        setAlertModal({ isOpen: true, title: 'Invalid Contact', message: 'Please enter a valid phone number or select a saved contact.' });
+        return;
     }
-    const cleanedPhoneNumber = phoneNumber.replace(/[^0-9+]/g, '');
+    const cleanedPhoneNumber = numberToSend.replace(/[^0-9+]/g, '');
     if (cleanedPhoneNumber.length < 10) {
-      setAlertModal({ isOpen: true, title: 'Invalid Phone Number', message: 'Phone number seems too short. Please include country code, e.g., +919876543210.' });
-      return;
+        setAlertModal({ isOpen: true, title: 'Invalid Phone Number', message: 'Phone number seems too short. Please include country code, e.g., +919876543210.' });
+        return;
     }
     const message = generateUsageReport();
     const encodedMessage = encodeURIComponent(message);
@@ -280,57 +400,6 @@ const App: React.FC = () => {
       message: `The variance for "${itemName}" is negative. Please check the opening, receiving, and closing stock values as this is usually not possible.`,
     });
   }, []);
-
-  const filteredData = useMemo(() => {
-    let processedData = inventoryData;
-
-    if (selectedCategoryFilter !== 'all') {
-      processedData = processedData.filter(category => category.id === selectedCategoryFilter);
-    }
-
-    if (searchQuery.trim() !== '') {
-      processedData = processedData.map(category => ({
-        ...category,
-        items: category.items.filter(item =>
-          item.name.toLowerCase().includes(searchQuery.trim().toLowerCase())
-        ),
-      })).filter(category => category.items.length > 0);
-    }
-
-    const { variance, stock, status } = activeFilters;
-    if (variance !== 'all' || stock !== 'all' || status !== 'all') {
-      processedData = processedData.map(category => ({
-        ...category,
-        items: category.items.filter(item => {
-          const opening = parseFloat(String(item.opening)) || 0;
-          const receiving = parseFloat(String(item.receiving)) || 0;
-          const closing = parseFloat(String(item.closing)) || 0;
-          const itemVariance = opening + receiving - closing;
-
-          const varianceMatch = variance === 'all' ||
-            (variance === 'positive' && itemVariance > 0) ||
-            (variance === 'negative' && itemVariance < 0) ||
-            (variance === 'zero' && itemVariance === 0);
-
-          const stockMatch = stock === 'all' ||
-            (stock === 'outOfStock' && closing === 0 && (String(item.closing).trim() !== '' || String(item.opening).trim() !== ''));
-
-          const statusMatch = status === 'all' ||
-            (status === 'incomplete' && (
-              item.name.trim() === '' ||
-              String(item.opening).trim() === '' ||
-              String(item.receiving).trim() === '' ||
-              String(item.closing).trim() === '' ||
-              String(item.price).trim() === ''
-            ));
-
-          return varianceMatch && stockMatch && statusMatch;
-        }),
-      })).filter(category => category.items.length > 0);
-    }
-
-    return processedData;
-  }, [inventoryData, selectedCategoryFilter, searchQuery, activeFilters]);
 
   const handleApplyFilters = () => {
     setActiveFilters(tempFilters);
@@ -348,6 +417,79 @@ const App: React.FC = () => {
     setIsFilterModalOpen(true);
   };
 
+  const handleConfirmReset = () => {
+    setInventoryData(prevData =>
+      prevData.map(category => ({
+        ...category,
+        items: category.items.map(item => ({
+          ...item,
+          opening: '',
+          receiving: '',
+          closing: '',
+        })),
+      }))
+    );
+    setIsResetModalOpen(false);
+  };
+
+  const handleAddContact = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmedName = newContactName.trim();
+    const trimmedNumber = newContactNumber.trim();
+    if (!trimmedName || !trimmedNumber) return;
+
+    const isDuplicate = contacts.some(c => c.name.toLowerCase() === trimmedName.toLowerCase() || c.number === trimmedNumber);
+    if (isDuplicate) {
+        setAlertModal({
+            isOpen: true,
+            title: 'Duplicate Contact',
+            message: `A contact with that name or number already exists.`,
+        });
+        return;
+    }
+
+    const newContact: Contact = {
+        id: `contact-${Date.now()}`,
+        name: trimmedName,
+        number: trimmedNumber
+    };
+    setContacts(prev => [...prev, newContact]);
+    setNewContactName('');
+    setNewContactNumber('');
+  };
+
+  const handleDeleteContact = (contactId: string) => {
+      setContacts(prev => prev.filter(c => c.id !== contactId));
+  };
+
+  const handleWhatsAppInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const value = e.target.value;
+      setWhatsAppInput(value);
+      
+      const isNumberLike = /^[+0-9\s-()]*$/.test(value);
+      if (isNumberLike) {
+          setSelectedWhatsAppNumber(value);
+      } else {
+          setSelectedWhatsAppNumber('');
+      }
+      setShowSuggestions(true);
+  };
+
+  const handleSuggestionClick = (contact: Contact) => {
+      setWhatsAppInput(contact.name);
+      setSelectedWhatsAppNumber(contact.number);
+      setShowSuggestions(false);
+  };
+
+  const whatsAppSuggestions = useMemo(() => {
+    if (!whatsAppInput || contacts.filter(c => c.name.toLowerCase() === whatsAppInput.toLowerCase()).length > 0) {
+        return [];
+    }
+    return contacts.filter(contact => 
+        contact.name.toLowerCase().includes(whatsAppInput.toLowerCase())
+    );
+  }, [whatsAppInput, contacts]);
+
   const filtersAreActive = JSON.stringify(activeFilters) !== JSON.stringify(defaultFilters);
   const categoryToDeleteName = inventoryData.find(cat => cat.id === categoryToDelete)?.category || '';
 
@@ -362,30 +504,56 @@ const App: React.FC = () => {
           
           <div className="mt-6 p-4 bg-slate-800/50 rounded-lg border border-slate-700 flex flex-col sm:flex-row items-center justify-between gap-4 flex-wrap">
               <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
-                  <div>
-                    <label htmlFor="phone-number" className="sr-only">Owner's WhatsApp Number</label>
+                  <div className="relative w-full sm:w-56" ref={whatsAppInputRef}>
+                    <label htmlFor="phone-number" className="sr-only">Owner/Group Name or Number</label>
                     <input
                       id="phone-number"
-                      type="tel"
-                      value={phoneNumber}
-                      onChange={(e) => setPhoneNumber(e.target.value)}
-                      placeholder="Owner's WhatsApp (+91...)"
-                      className="w-full sm:w-56 bg-slate-700 border border-slate-600 rounded-md py-2 px-3 text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500 placeholder-slate-400"
-                      aria-label="Owner's WhatsApp Phone Number"
+                      type="text"
+                      value={whatsAppInput}
+                      onChange={handleWhatsAppInputChange}
+                      onFocus={() => setShowSuggestions(true)}
+                      placeholder="Owner/Group or Number..."
+                      className="w-full bg-slate-700 border border-slate-600 rounded-md py-2 px-3 text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500 placeholder-slate-400"
+                      aria-label="Owner or Group WhatsApp Name or Number"
+                      autoComplete="off"
                     />
+                    {showSuggestions && whatsAppSuggestions.length > 0 && (
+                      <div className="absolute top-full left-0 right-0 mt-1 bg-slate-700 border border-slate-600 rounded-md shadow-lg z-20 max-h-48 overflow-y-auto">
+                        <ul>
+                          {whatsAppSuggestions.map(contact => (
+                            <li 
+                              key={contact.id}
+                              onClick={() => handleSuggestionClick(contact)}
+                              className="px-3 py-2 cursor-pointer hover:bg-slate-600"
+                            >
+                              <div className="font-semibold text-slate-200">{contact.name}</div>
+                              <div className="text-xs text-slate-400">{contact.number}</div>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </div>
                   <button
+                    onClick={() => setIsContactsModalOpen(true)}
+                    disabled={isPriceEditMode}
+                    className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-slate-600 text-white font-semibold rounded-lg shadow-md hover:bg-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-400 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                    aria-label="Manage Contacts"
+                  >
+                    <UserGroupIcon />
+                  </button>
+                  <button
                     onClick={handleSendWhatsApp}
-                    disabled={!phoneNumber.trim()}
+                    disabled={!(selectedWhatsAppNumber.trim() || whatsAppInput.trim()) || isPriceEditMode}
                     className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-teal-600 text-white font-semibold rounded-lg shadow-md hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-opacity-75 transition-all duration-200 disabled:bg-slate-600 disabled:cursor-not-allowed"
                   >
                     <WhatsAppIcon />
-                    Send Usage Report
+                    Send Report
                   </button>
               </div>
 
               <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
-                <div className="flex items-center gap-2 w-full sm:w-auto bg-slate-700 border border-slate-600 rounded-md px-3 text-slate-400 focus-within:text-white focus-within:ring-2 focus-within:ring-teal-500">
+                <div className={`flex items-center gap-2 w-full sm:w-auto bg-slate-700 border border-slate-600 rounded-md px-3 text-slate-400 focus-within:text-white focus-within:ring-2 focus-within:ring-teal-500 ${isPriceEditMode ? 'opacity-50' : ''}`}>
                     <SearchIcon />
                     <input
                         type="text"
@@ -394,11 +562,13 @@ const App: React.FC = () => {
                         onChange={(e) => setSearchQuery(e.target.value)}
                         className="w-full sm:w-40 bg-transparent py-2 text-slate-200 focus:outline-none placeholder-slate-400"
                         aria-label="Search for items"
+                        disabled={isPriceEditMode}
                     />
                 </div>
                 <button
                   onClick={openFilterModal}
-                  className={`relative w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 font-semibold rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-opacity-75 transition-colors duration-200 ${filtersAreActive ? 'bg-indigo-600 text-white hover:bg-indigo-700 focus:ring-indigo-500' : 'bg-slate-600 text-slate-200 hover:bg-slate-500 focus:ring-slate-400'}`}
+                  disabled={isPriceEditMode}
+                  className={`relative w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 font-semibold rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-opacity-75 transition-colors duration-200 disabled:bg-slate-600 disabled:cursor-not-allowed ${filtersAreActive ? 'bg-indigo-600 text-white hover:bg-indigo-700 focus:ring-indigo-500' : 'bg-slate-600 text-slate-200 hover:bg-slate-500 focus:ring-slate-400'}`}
                 >
                   <FilterIcon />
                   Filters
@@ -406,21 +576,57 @@ const App: React.FC = () => {
                 </button>
                 <button
                   onClick={() => setIsAddCategoryModalOpen(true)}
-                  className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-75 transition-colors duration-200"
+                  disabled={isPriceEditMode}
+                  className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-75 transition-colors duration-200 disabled:bg-slate-600 disabled:cursor-not-allowed"
                   >
                   <PlusIcon />
                   Add Category
                 </button>
                 <button
                   onClick={handleExportCSV}
-                  className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 text-white font-semibold rounded-lg shadow-md hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-opacity-75 transition-colors duration-200"
+                  disabled={isPriceEditMode}
+                  className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 text-white font-semibold rounded-lg shadow-md hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-opacity-75 transition-colors duration-200 disabled:bg-slate-600 disabled:cursor-not-allowed"
                 >
                   <DownloadIcon />
                   Export CSV
                 </button>
+                <button
+                  onClick={() => setIsResetModalOpen(true)}
+                  disabled={isPriceEditMode}
+                  className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-amber-600 text-white font-semibold rounded-lg shadow-md hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-opacity-75 transition-colors duration-200 disabled:bg-slate-600 disabled:cursor-not-allowed"
+                >
+                  <ResetIcon />
+                  Reset Stock
+                </button>
+                {!isPriceEditMode ? (
+                  <button
+                    onClick={handleEnterPriceEditMode}
+                    className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-purple-600 text-white font-semibold rounded-lg shadow-md hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-opacity-75 transition-colors duration-200"
+                  >
+                    <PencilIcon />
+                    Update Prices
+                  </button>
+                ) : (
+                  <div className="flex gap-3 w-full sm:w-auto">
+                    <button
+                      onClick={handleSavePrices}
+                      className="w-full flex-1 sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-lg shadow-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500"
+                    >
+                      <CheckIcon />
+                      Save
+                    </button>
+                    <button
+                      onClick={handleCancelPriceEdit}
+                      className="w-full flex-1 sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-slate-600 text-white font-semibold rounded-lg shadow-md hover:bg-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-400"
+                    >
+                      <XIcon />
+                      Cancel
+                    </button>
+                  </div>
+                )}
               </div>
           </div>
-           <div className="mt-4 p-2 bg-slate-800/50 rounded-lg border border-slate-700 flex flex-col sm:flex-row items-center justify-start gap-4 flex-wrap">
+           <div className={`mt-4 p-2 bg-slate-800/50 rounded-lg border border-slate-700 flex flex-col sm:flex-row items-center justify-start gap-4 flex-wrap ${isPriceEditMode ? 'opacity-50' : ''}`}>
               <div className="flex items-center gap-3">
                 <label htmlFor="inventory-date" className="text-sm font-medium text-slate-300">Date:</label>
                 <input
@@ -431,6 +637,7 @@ const App: React.FC = () => {
                   max={new Date().toISOString().split('T')[0]}
                   className="bg-slate-700 border border-slate-600 rounded-md py-1 px-2 text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500"
                   aria-label="Inventory Date"
+                  disabled={isPriceEditMode}
                 />
               </div>
               <div className="flex items-center gap-3">
@@ -441,6 +648,7 @@ const App: React.FC = () => {
                   onChange={(e) => setSelectedCategoryFilter(e.target.value)}
                   className="w-full sm:w-56 bg-slate-700 border border-slate-600 rounded-md py-1 px-2 text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500"
                   aria-label="Filter by Category"
+                  disabled={isPriceEditMode}
                 >
                   <option value="all" className="bg-slate-800">All Categories</option>
                   {inventoryData.map(category => (
@@ -454,6 +662,11 @@ const App: React.FC = () => {
         </header>
         
         <main className="bg-slate-800 shadow-2xl rounded-xl overflow-hidden">
+          {isPriceEditMode && (
+              <div className="bg-purple-900/50 text-purple-200 p-3 text-center text-sm font-semibold border-b border-slate-700">
+                  You are in price editing mode. Click 'Save' to confirm or 'Cancel' to discard changes.
+              </div>
+          )}
           {filteredData.length > 0 ? (
             <SheetTable
               data={filteredData}
@@ -463,6 +676,7 @@ const App: React.FC = () => {
               onDeleteCategory={handleDeleteCategory}
               onUpdateCategoryName={handleUpdateCategoryName}
               onNegativeVariance={handleNegativeVariance}
+              isPriceEditMode={isPriceEditMode}
             />
           ) : (
             <div className="text-center py-16 px-4">
@@ -477,6 +691,52 @@ const App: React.FC = () => {
             </div>
           )}
         </main>
+
+        {isContactsModalOpen && (
+          <div className="fixed inset-0 bg-slate-900/80 z-50 flex justify-center items-center p-4 backdrop-blur-sm" aria-modal="true" role="dialog">
+            <div className="bg-slate-800 rounded-lg shadow-xl p-6 w-full max-w-lg border border-slate-700">
+              <h2 className="text-xl font-bold mb-4 text-white">Manage Contacts</h2>
+              <form onSubmit={handleAddContact} className="mb-6 p-4 bg-slate-700/50 rounded-lg">
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <div className="flex-1">
+                    <label htmlFor="new-contact-name" className="block text-sm font-medium text-slate-300 mb-1">Name</label>
+                    <input id="new-contact-name" type="text" value={newContactName} onChange={(e) => setNewContactName(e.target.value)} placeholder="e.g., 'Store Manager'" className="w-full bg-slate-700 border border-slate-600 rounded-md py-2 px-3 text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500" required />
+                  </div>
+                  <div className="flex-1">
+                    <label htmlFor="new-contact-number" className="block text-sm font-medium text-slate-300 mb-1">Number / ID</label>
+                    <input id="new-contact-number" type="text" value={newContactNumber} onChange={(e) => setNewContactNumber(e.target.value)} placeholder="+91..." className="w-full bg-slate-700 border border-slate-600 rounded-md py-2 px-3 text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500" required />
+                  </div>
+                  <div className="self-end">
+                    <button type="submit" disabled={!newContactName.trim() || !newContactNumber.trim()} className="px-4 py-2 h-10 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 disabled:bg-slate-500 disabled:cursor-not-allowed">Add</button>
+                  </div>
+                </div>
+              </form>
+              <h3 className="text-lg font-semibold mb-3 text-slate-200">Saved Contacts</h3>
+              <div className="max-h-60 overflow-y-auto pr-2">
+                {contacts.length > 0 ? (
+                  <ul className="space-y-2">
+                    {contacts.map(contact => (
+                      <li key={contact.id} className="flex justify-between items-center bg-slate-700 p-3 rounded-lg">
+                        <div>
+                          <p className="font-semibold text-white">{contact.name}</p>
+                          <p className="text-sm text-slate-400">{contact.number}</p>
+                        </div>
+                        <button onClick={() => handleDeleteContact(contact.id)} className="text-slate-500 hover:text-red-500" aria-label={`Delete ${contact.name}`}>
+                          <TrashIcon />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-slate-400 text-center py-4">No contacts saved yet.</p>
+                )}
+              </div>
+              <div className="mt-6 flex justify-end">
+                <button type="button" onClick={() => setIsContactsModalOpen(false)} className="px-4 py-2 bg-slate-600 text-white font-semibold rounded-lg shadow-md hover:bg-slate-700">Close</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {isFilterModalOpen && (
           <div className="fixed inset-0 bg-slate-900/80 z-50 flex justify-center items-center p-4 backdrop-blur-sm" aria-modal="true" role="dialog">
@@ -566,6 +826,19 @@ const App: React.FC = () => {
           </div>
         )}
         
+        {isResetModalOpen && (
+          <div className="fixed inset-0 bg-slate-900/80 z-50 flex justify-center items-center p-4 backdrop-blur-sm" aria-modal="true" role="dialog">
+            <div className="bg-slate-800 rounded-lg shadow-xl p-6 w-full max-w-md border border-slate-700">
+              <h2 className="text-xl font-bold mb-2 text-white">Confirm Stock Reset</h2>
+              <p className="text-slate-300 mb-6">Are you sure you want to reset the stock data? This will clear all <strong>Opening</strong>, <strong>Receiving</strong>, and <strong>Closing</strong> values for every item. Item names, UOM, and prices will not be changed. This action cannot be undone.</p>
+              <div className="flex justify-end gap-4">
+                <button type="button" onClick={() => setIsResetModalOpen(false)} className="px-4 py-2 bg-slate-600 text-white font-semibold rounded-lg shadow-md hover:bg-slate-700">Cancel</button>
+                <button type="button" onClick={handleConfirmReset} className="px-4 py-2 bg-amber-600 text-white font-semibold rounded-lg shadow-md hover:bg-amber-700">Confirm Reset</button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {alertModal.isOpen && (
           <div className="fixed inset-0 bg-slate-900/80 z-50 flex justify-center items-center p-4 backdrop-blur-sm" aria-modal="true" role="dialog">
             <div className="bg-slate-800 rounded-lg shadow-xl p-6 w-full max-w-md border border-slate-700">
